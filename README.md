@@ -81,7 +81,7 @@ content.
 
 | Field | Type | Required | Description |
 |---|---|---:|---|
-| `filePath` | string | Yes | Absolute or working-directory-relative path to an allowed image |
+| `filePath` | string | Yes | Absolute path, working-directory-relative path, or filename to search for within authorized roots |
 
 Supported filename extensions:
 
@@ -96,7 +96,7 @@ Tool-call shape:
 {
   "name": "read_local_image",
   "arguments": {
-    "filePath": "/ABSOLUTE/PATH/TO/ALLOWED_IMAGES/example.png"
+    "filePath": "example.png"
   }
 }
 ```
@@ -109,8 +109,7 @@ authorization, file-type, and filesystem failures return a tool result with
 
 Place `diagram.png` inside the configured image directory, then ask the client:
 
-> Use `read_local_image` to open
-> `/ABSOLUTE/PATH/TO/ALLOWED_IMAGES/diagram.png`. Describe the diagram and list
+> Use `read_local_image` to open `diagram.png`. Describe the diagram and list
 > any text visible in it.
 
 The client may ask you to approve the tool call. After approval, the server
@@ -124,6 +123,18 @@ The server always allows its canonical current working directory. It resolves
 both roots and requested files to canonical paths before checking containment,
 which blocks `..` traversal, path-prefix tricks, and symlinks that resolve
 outside an allowed root.
+
+When `filePath` is only a filename, the server checks the current working
+directory first. If no exact file exists there, it searches recursively within
+the current working directory and every configured additional root. Absolute
+paths and relative paths containing directories are always resolved exactly
+and never trigger filename search.
+
+Search does not follow directory symlinks and never expands the configured
+authorized roots. If multiple canonical files have the requested name, the
+server returns an ambiguity error with up to 10 paths so the caller can retry
+with an exact path. Search stops after 10,000 directory entries; configure a
+narrower root or provide a more specific path if that limit is reached.
 
 Additional roots are optional:
 
@@ -369,6 +380,23 @@ MCP messages on standard input.
   root through `MCP_IMAGE_ALLOWED_ROOTS`.
 - Use `:` between additional roots on macOS/Linux and `;` on Windows.
 - Check whether the requested path is a symlink that resolves elsewhere.
+
+### `Image file not found in authorized roots`
+
+- Confirm the filename and extension, including letter case.
+- Confirm the file is beneath the current working directory or an additional
+  authorized root.
+- Provide a relative or absolute path when you already know the location.
+
+### `Ambiguous image filename`
+
+More than one authorized file has the requested name. Retry with one of the
+exact paths listed in the error.
+
+### `Image search exceeded 10,000 directory entries`
+
+Use a more specific relative or absolute path, or configure a narrower working
+directory and additional roots.
 
 ### The image loads but the model cannot interpret it
 
