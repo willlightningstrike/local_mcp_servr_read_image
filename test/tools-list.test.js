@@ -18,7 +18,12 @@ test("tools/list exposes only read_local_image", async () => {
   try {
     await client.connect(transport);
     const result = await client.listTools();
+    const [tool] = result.tools;
     assert.deepEqual(result.tools.map(({ name }) => name), ["read_local_image"]);
+    assert.match(
+      tool.inputSchema.properties.filePath.description,
+      /filename.*authorized roots/i,
+    );
   } finally {
     await client.close();
   }
@@ -83,5 +88,40 @@ test("read_local_image rejects malformed arguments as InvalidParams", async () =
     }
   } finally {
     await client.close();
+  }
+});
+
+test("read_local_image finds a nested image by filename", async () => {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-image-search-"));
+  const nested = path.join(base, "nested");
+  const serverEntry = path.join(process.cwd(), "index.js");
+  const image = path.join(nested, "found.png");
+  await fs.mkdir(nested);
+  await fs.writeFile(image, "image-data");
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverEntry],
+    cwd: base,
+  });
+  const client = new Client({ name: "image-search-test", version: "1.0.0" });
+
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "read_local_image",
+      arguments: { filePath: "found.png" },
+    });
+    const imageContent = result.content.find(({ type }) => type === "image");
+
+    assert.equal(result.isError, undefined);
+    assert.equal(imageContent.mimeType, "image/png");
+    assert.equal(
+      imageContent.data,
+      Buffer.from("image-data").toString("base64"),
+    );
+  } finally {
+    await client.close();
+    await fs.rm(base, { recursive: true, force: true });
   }
 });

@@ -33,7 +33,7 @@ const TOOLS = [
       properties: {
         filePath: {
           type: "string",
-          description: "The absolute path to the image file (jpg, png, webp)."
+          description: "An absolute path, a working-directory-relative path, or a filename to search for recursively within authorized roots (jpg, png, webp)."
         }
       },
       required: ["filePath"]
