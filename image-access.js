@@ -46,6 +46,12 @@ function isFilenameOnly(filePath) {
     filePath !== "..";
 }
 
+function validateMaxSearchEntries(maxSearchEntries) {
+  if (!Number.isInteger(maxSearchEntries) || maxSearchEntries <= 0) {
+    throw new TypeError("maxSearchEntries must be a positive integer.");
+  }
+}
+
 function ambiguityError(fileName, matches) {
   const shown = matches.slice(0, MAX_REPORTED_MATCHES);
   const omitted = matches.length - shown.length;
@@ -142,6 +148,8 @@ export async function resolveAuthorizedImagePath(
     maxSearchEntries = DEFAULT_MAX_SEARCH_ENTRIES,
   } = {},
 ) {
+  validateMaxSearchEntries(maxSearchEntries);
+
   const canonicalRoots = await Promise.all(
     configuredRoots(cwd, additionalRoots).map((root) => fs.realpath(root)),
   );

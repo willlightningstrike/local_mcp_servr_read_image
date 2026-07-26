@@ -280,3 +280,17 @@ test("stops recursive search at the configured entry limit", async () => {
     );
   });
 });
+
+test("rejects invalid maximum search entry limits", async () => {
+  await withFixture(async ({ allowed }) => {
+    for (const maxSearchEntries of [NaN, Infinity, -Infinity, 0, -1, 1.5]) {
+      await assert.rejects(
+        resolveAuthorizedImagePath("missing.png", {
+          cwd: allowed,
+          maxSearchEntries,
+        }),
+        /maxSearchEntries must be a positive integer/,
+      );
+    }
+  });
+});
