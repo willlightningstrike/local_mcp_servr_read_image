@@ -303,37 +303,6 @@ MCP Servers → View raw config**, save the entry, and refresh the server.
 Antigravity tools run in Ask mode by default unless your policy changes their
 approval behavior.
 
-### LM Studio
-
-LM Studio 0.3.17 or newer can act as an MCP host. Open the **Program** tab,
-select **Install → Edit mcp.json**, and add:
-
-```json
-{
-  "mcpServers": {
-    "local-image": {
-      "command": "/ABSOLUTE/PATH/TO/NODE",
-      "args": [
-        "/ABSOLUTE/PATH/TO/REPOSITORY/index.js"
-      ],
-      "cwd": "/ABSOLUTE/PATH/TO/ALLOWED_IMAGES",
-      "env": {
-        "MCP_IMAGE_ALLOWED_ROOTS": "/ABSOLUTE/PATH/TO/ADDITIONAL_IMAGES"
-      }
-    }
-  }
-}
-```
-
-LM Studio follows Cursor's `mcp.json` notation. If your installed version does
-not honor `cwd` for a local server, use the fixed `/bin/sh` launcher shown in
-the Claude Desktop section, or a fixed Windows `.cmd` launcher. Do not accept
-an unexpectedly broad working directory.
-
-LM Studio normally shows a confirmation dialog before a model calls a tool.
-Review the path before approving it. You can manage remembered decisions under
-**App Settings → Tools & Integrations**.
-
 ## Permissions
 
 The server process runs with the operating-system permissions of the MCP
@@ -415,7 +384,6 @@ file is excluded by `.gitignore`. Client-specific locations include:
 - Claude Desktop on macOS: `~/Library/Logs/Claude`
 - Antigravity: inspect the MCP Manager or server status UI
 - Codex: run `codex mcp get local-image` and use `/mcp` in the TUI
-- LM Studio: inspect the Program/MCP interface and application logs
 
 MCP protocol output must use standard output, so server diagnostics are sent
 to standard error and the log file.
@@ -428,7 +396,6 @@ Configuration formats can change. These examples were checked on 2026-07-25:
 - [Claude Desktop local MCP servers](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
 - [Codex MCP configuration](https://developers.openai.com/codex/mcp/)
 - [Antigravity MCP configuration](https://antigravity.google/docs/mcp)
-- [LM Studio MCP configuration](https://lmstudio.ai/docs/app/mcp)
 
 ## License
 
