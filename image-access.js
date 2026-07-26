@@ -4,6 +4,16 @@ import path from "node:path";
 const DEFAULT_MAX_SEARCH_ENTRIES = 10_000;
 const MAX_REPORTED_MATCHES = 10;
 
+function compareOrdinal(left, right) {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+}
+
 function isWithinRoot(root, target) {
   const relative = path.relative(root, target);
   return relative === "" || (
@@ -90,20 +100,21 @@ async function findAuthorizedImageByName(
     }
     visitedDirectories.add(canonicalDirectory);
 
-    const entries = await fs.readdir(canonicalDirectory, {
-      withFileTypes: true,
-    });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-
-    const childDirectories = [];
-    for (const entry of entries) {
+    const entries = [];
+    const directory = await fs.opendir(canonicalDirectory);
+    for await (const entry of directory) {
       inspectedEntries += 1;
       if (inspectedEntries > maxSearchEntries) {
         throw new Error(
           `Image search exceeded ${maxSearchEntries.toLocaleString("en-US")} directory entries. Provide a more specific path or configure a narrower authorized root.`,
         );
       }
+      entries.push(entry);
+    }
+    entries.sort((left, right) => compareOrdinal(left.name, right.name));
 
+    const childDirectories = [];
+    for (const entry of entries) {
       const candidate = path.join(canonicalDirectory, entry.name);
       if (entry.isDirectory()) {
         childDirectories.push(candidate);
@@ -137,7 +148,7 @@ async function findAuthorizedImageByName(
     }
   }
 
-  return [...matches].sort((left, right) => left.localeCompare(right));
+  return [...matches].sort(compareOrdinal);
 }
 
 export async function resolveAuthorizedImagePath(

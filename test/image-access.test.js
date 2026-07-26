@@ -171,6 +171,35 @@ test("rejects an ambiguous recursive filename with sorted matches", async () => 
   });
 });
 
+test("orders ambiguous matches by ordinal path comparison", async () => {
+  await withFixture(async ({ allowed }) => {
+    const directoryNames = ["Z", "a", "ä"];
+    await Promise.all(
+      directoryNames.map(async (directoryName) => {
+        const directory = path.join(allowed, directoryName);
+        await fs.mkdir(directory);
+        await fs.writeFile(path.join(directory, "collated.png"), directoryName);
+      }),
+    );
+    const canonicalAllowed = await fs.realpath(allowed);
+
+    await assert.rejects(
+      resolveAuthorizedImagePath("collated.png", { cwd: allowed }),
+      (error) => {
+        const listedPaths = error.message
+          .split("\n")
+          .filter((line) => line.startsWith("- "));
+        assert.deepEqual(listedPaths, [
+          `- ${path.join(canonicalAllowed, "Z", "collated.png")}`,
+          `- ${path.join(canonicalAllowed, "a", "collated.png")}`,
+          `- ${path.join(canonicalAllowed, "ä", "collated.png")}`,
+        ]);
+        return true;
+      },
+    );
+  });
+});
+
 test("limits ambiguity output to 10 sorted paths", async () => {
   await withFixture(async ({ allowed }) => {
     for (let index = 0; index < 11; index += 1) {
@@ -270,6 +299,27 @@ test("stops recursive search at the configured entry limit", async () => {
       fs.writeFile(path.join(allowed, "b.txt"), "b"),
       fs.writeFile(path.join(allowed, "c.txt"), "c"),
     ]);
+
+    await assert.rejects(
+      resolveAuthorizedImagePath("missing.png", {
+        cwd: allowed,
+        maxSearchEntries: 2,
+      }),
+      /Image search exceeded 2 directory entries/,
+    );
+  });
+});
+
+test("streams a single oversized directory before enforcing the entry limit", async (t) => {
+  await withFixture(async ({ allowed }) => {
+    await Promise.all([
+      fs.writeFile(path.join(allowed, "a.txt"), "a"),
+      fs.writeFile(path.join(allowed, "b.txt"), "b"),
+      fs.writeFile(path.join(allowed, "c.txt"), "c"),
+    ]);
+    t.mock.method(fs, "readdir", async () => {
+      throw new Error("unbounded directory materialization attempted");
+    });
 
     await assert.rejects(
       resolveAuthorizedImagePath("missing.png", {
