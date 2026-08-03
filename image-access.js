@@ -90,18 +90,29 @@ async function findAuthorizedImageByName(
 
   while (pendingDirectories.length > 0) {
     const currentDirectory = pendingDirectories.pop();
-    const canonicalDirectory = await fs.realpath(currentDirectory);
 
-    if (
-      visitedDirectories.has(canonicalDirectory) ||
-      !isAuthorized(canonicalRoots, canonicalDirectory)
-    ) {
-      continue;
+    // A directory can disappear between being queued and being opened; that is
+    // a normal concurrent-filesystem event, not a failure of the whole search.
+    let canonicalDirectory;
+    let directory;
+    try {
+      canonicalDirectory = await fs.realpath(currentDirectory);
+      if (
+        visitedDirectories.has(canonicalDirectory) ||
+        !isAuthorized(canonicalRoots, canonicalDirectory)
+      ) {
+        continue;
+      }
+      directory = await fs.opendir(canonicalDirectory);
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        continue;
+      }
+      throw error;
     }
     visitedDirectories.add(canonicalDirectory);
 
     const entries = [];
-    const directory = await fs.opendir(canonicalDirectory);
     for await (const entry of directory) {
       inspectedEntries += 1;
       if (inspectedEntries > maxSearchEntries) {
@@ -167,7 +178,12 @@ export async function resolveAuthorizedImagePath(
 
   try {
     const target = await fs.realpath(path.resolve(cwd, filePath));
-    return authorize(canonicalRoots, target);
+    // A directory named like the requested image must not shadow a real
+    // nested image of the same name; fall through to the recursive search.
+    const targetStats = await fs.stat(target);
+    if (targetStats.isFile() || !isFilenameOnly(filePath)) {
+      return authorize(canonicalRoots, target);
+    }
   } catch (error) {
     if (!isMissingPathError(error) || !isFilenameOnly(filePath)) {
       throw error;

@@ -149,6 +149,56 @@ test("does not search for a relative path containing directories", async () => {
   });
 });
 
+test("searches past a directory that shares the requested filename", async () => {
+  await withFixture(async ({ allowed }) => {
+    const nested = path.join(allowed, "nested");
+    const image = path.join(nested, "diagram.png");
+    await fs.mkdir(path.join(allowed, "diagram.png"));
+    await fs.mkdir(nested);
+    await fs.writeFile(image, "diagram");
+
+    assert.equal(
+      await resolveAuthorizedImagePath("diagram.png", { cwd: allowed }),
+      await fs.realpath(image),
+    );
+  });
+});
+
+test("keeps a non-file exact path resolvable for the caller to reject", async () => {
+  await withFixture(async ({ allowed }) => {
+    const nested = path.join(allowed, "nested");
+    await fs.mkdir(nested);
+
+    assert.equal(
+      await resolveAuthorizedImagePath(nested, { cwd: allowed }),
+      await fs.realpath(nested),
+    );
+  });
+});
+
+test("skips a searched directory removed mid-traversal", async (t) => {
+  await withFixture(async ({ allowed }) => {
+    const doomed = path.join(allowed, "doomed");
+    const keeper = path.join(allowed, "keeper");
+    const image = path.join(keeper, "survivor.png");
+    await Promise.all([fs.mkdir(doomed), fs.mkdir(keeper)]);
+    await fs.writeFile(image, "survivor");
+
+    const realpath = fs.realpath.bind(fs);
+    t.mock.method(fs, "realpath", async (target, ...rest) => {
+      if (target === doomed) {
+        await fs.rm(doomed, { recursive: true, force: true });
+      }
+      return realpath(target, ...rest);
+    });
+
+    assert.equal(
+      await resolveAuthorizedImagePath("survivor.png", { cwd: allowed }),
+      await realpath(image),
+    );
+  });
+});
+
 test("rejects an ambiguous recursive filename with sorted matches", async () => {
   await withFixture(async ({ allowed }) => {
     const firstDir = path.join(allowed, "a");
