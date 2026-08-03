@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -160,6 +161,28 @@ async function findAuthorizedImageByName(
   }
 
   return [...matches].sort(compareOrdinal);
+}
+
+// Authorization resolves to a canonical path, so its final component is by
+// definition not a symlink. Re-opening that path by name later would follow a
+// symlink swapped in after the check; O_NOFOLLOW makes that swap fail closed
+// instead. O_NONBLOCK keeps a FIFO from hanging the open indefinitely.
+export async function openAuthorizedImage(absolutePath) {
+  try {
+    return await fs.open(
+      absolutePath,
+      fsConstants.O_RDONLY |
+        (fsConstants.O_NOFOLLOW ?? 0) |
+        (fsConstants.O_NONBLOCK ?? 0),
+    );
+  } catch (error) {
+    if (error?.code === "ELOOP") {
+      throw new Error(
+        "Access denied: image path became a symlink after authorization.",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function resolveAuthorizedImagePath(

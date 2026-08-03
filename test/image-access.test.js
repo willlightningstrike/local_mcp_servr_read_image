@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveAuthorizedImagePath } from "../image-access.js";
+import {
+  openAuthorizedImage,
+  resolveAuthorizedImagePath,
+} from "../image-access.js";
 
 async function withFixture(run) {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-image-access-"));
@@ -377,6 +380,40 @@ test("streams a single oversized directory before enforcing the entry limit", as
         maxSearchEntries: 2,
       }),
       /Image search exceeded 2 directory entries/,
+    );
+  });
+});
+
+test("opens an authorized regular file for reading", async () => {
+  await withFixture(async ({ allowed }) => {
+    const image = path.join(allowed, "inside.png");
+    await fs.writeFile(image, "inside");
+
+    const handle = await openAuthorizedImage(await fs.realpath(image));
+    try {
+      assert.equal((await handle.stat()).isFile(), true);
+      assert.equal((await handle.readFile()).toString(), "inside");
+    } finally {
+      await handle.close();
+    }
+  });
+});
+
+test("refuses to open a path that has become a symlink", async () => {
+  await withFixture(async ({ allowed, outside }) => {
+    const secret = path.join(outside, "secret.png");
+    const swapped = path.join(allowed, "image.png");
+    await fs.writeFile(secret, "secret");
+
+    // Stands in for a swap landing between authorization and the read: the
+    // authorized name now points outside every root.
+    await fs.writeFile(swapped, "image");
+    await fs.rm(swapped);
+    await fs.symlink(secret, swapped);
+
+    await assert.rejects(
+      openAuthorizedImage(swapped),
+      /Access denied: image path became a symlink after authorization/,
     );
   });
 });

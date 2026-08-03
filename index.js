@@ -6,10 +6,12 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import fs from "fs/promises";
 import path from "path";
 import { z } from "zod";
-import { resolveAuthorizedImagePath } from "./image-access.js";
+import {
+  openAuthorizedImage,
+  resolveAuthorizedImagePath,
+} from "./image-access.js";
 import { agentLog } from "./logger.js";
 
 const DEFAULT_MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -82,40 +84,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const absolutePath = await resolveAuthorizedImagePath(filePath);
         agentLog.info("Reading local image", { path: absolutePath });
 
-        // Check if file exists and is an image
-        const stats = await fs.stat(absolutePath);
-        if (!stats.isFile()) throw new Error("Path is not a file.");
+        // Inspect and read through one handle so the authorized file cannot be
+        // swapped out between the checks and the read.
+        const handle = await openAuthorizedImage(absolutePath);
 
-        if (stats.size > MAX_IMAGE_BYTES) {
-          throw new Error(
-            `Image is ${stats.size.toLocaleString("en-US")} bytes, above the ${MAX_IMAGE_BYTES.toLocaleString("en-US")} byte limit. Resize the image or raise MCP_IMAGE_MAX_BYTES.`,
-          );
+        try {
+          const stats = await handle.stat();
+          if (!stats.isFile()) throw new Error("Path is not a file.");
+
+          if (stats.size > MAX_IMAGE_BYTES) {
+            throw new Error(
+              `Image is ${stats.size.toLocaleString("en-US")} bytes, above the ${MAX_IMAGE_BYTES.toLocaleString("en-US")} byte limit. Resize the image or raise MCP_IMAGE_MAX_BYTES.`,
+            );
+          }
+
+          const ext = path.extname(absolutePath).toLowerCase();
+          const validExts = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+
+          if (!validExts[ext]) {
+            throw new Error(`Unsupported format: ${ext}. Use PNG, JPG, or WebP.`);
+          }
+
+          // Read file and convert to Base64
+          const buffer = await handle.readFile();
+          const base64Image = buffer.toString('base64');
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Image loaded: ${path.basename(absolutePath)}. You can now see this image.`
+              },
+              {
+                type: "image",
+                data: base64Image,
+                mimeType: validExts[ext]
+              }
+            ]
+          };
+        } finally {
+          await handle.close();
         }
-
-        const ext = path.extname(absolutePath).toLowerCase();
-        const validExts = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
-
-        if (!validExts[ext]) {
-          throw new Error(`Unsupported format: ${ext}. Use PNG, JPG, or WebP.`);
-        }
-
-        // Read file and convert to Base64
-        const buffer = await fs.readFile(absolutePath);
-        const base64Image = buffer.toString('base64');
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Image loaded: ${path.basename(absolutePath)}. You can now see this image.`
-            },
-            {
-              type: "image",
-              data: base64Image,
-              mimeType: validExts[ext]
-            }
-          ]
-        };
       } catch (err) {
         agentLog.error("Failed to read image", err);
         return {
