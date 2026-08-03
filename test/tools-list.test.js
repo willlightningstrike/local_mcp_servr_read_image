@@ -24,6 +24,31 @@ test("tools/list exposes only read_local_image", async () => {
       tool.inputSchema.properties.filePath.description,
       /filename.*authorized roots/i,
     );
+    // The advertised contract must not accept requests the runtime rejects.
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    assert.equal(tool.inputSchema.properties.filePath.minLength, 1);
+    assert.equal(tool.inputSchema.properties.filePath.pattern, "\\S");
+  } finally {
+    await client.close();
+  }
+});
+
+test("an unknown tool name is reported as MethodNotFound", async () => {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["index.js"],
+    cwd: process.cwd(),
+  });
+  const client = new Client({ name: "unknown-tool-test", version: "1.0.0" });
+
+  try {
+    await client.connect(transport);
+    await assert.rejects(
+      client.callTool({ name: "no_such_tool", arguments: {} }),
+      (error) =>
+        error.code === ErrorCode.MethodNotFound &&
+        error.message.includes("no_such_tool"),
+    );
   } finally {
     await client.close();
   }

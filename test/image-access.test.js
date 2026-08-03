@@ -57,7 +57,7 @@ test("rejects an image outside every allowed root", async () => {
     await fs.writeFile(image, "outside");
     await assert.rejects(
       resolveAuthorizedImagePath(image, { cwd: allowed }),
-      /Access denied: image path is outside allowed roots/,
+      /Access denied: image path is missing or outside allowed roots/,
     );
   });
 });
@@ -70,7 +70,7 @@ test("rejects a symlink that escapes an allowed root", async () => {
     await fs.symlink(image, link);
     await assert.rejects(
       resolveAuthorizedImagePath(link, { cwd: allowed }),
-      /Access denied: image path is outside allowed roots/,
+      /Access denied: image path is missing or outside allowed roots/,
     );
   });
 });
@@ -146,9 +146,31 @@ test("does not search for a relative path containing directories", async () => {
         cwd: allowed,
       }),
       (error) =>
-        ["ENOENT", "ENOTDIR"].includes(error.code) &&
+        ["ENOENT", "ENOTDIR"].includes(error.cause?.code) &&
         !error.message.includes("Image file not found in authorized roots"),
     );
+  });
+});
+
+test("reports missing and out-of-root paths identically", async () => {
+  await withFixture(async ({ allowed, outside }) => {
+    const existing = path.join(outside, "existing.png");
+    const missing = path.join(outside, "missing.png");
+    await fs.writeFile(existing, "existing");
+
+    const messages = [];
+    for (const candidate of [existing, missing]) {
+      await assert.rejects(
+        resolveAuthorizedImagePath(candidate, { cwd: allowed }),
+        (error) => {
+          messages.push(error.message);
+          return true;
+        },
+      );
+    }
+
+    assert.equal(messages[0], messages[1]);
+    assert.equal(messages[0].includes(outside), false);
   });
 });
 

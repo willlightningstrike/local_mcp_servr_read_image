@@ -39,9 +39,19 @@ function isAuthorized(canonicalRoots, target) {
   return canonicalRoots.some((root) => isWithinRoot(root, target));
 }
 
+// One message for "does not exist" and "exists but is out of bounds" alike:
+// distinguishing them lets a caller probe for the existence of paths it is not
+// allowed to read. The underlying error stays attached as `cause` for logs.
+const ACCESS_DENIED_MESSAGE =
+  "Access denied: image path is missing or outside allowed roots.";
+
+function accessDeniedError(cause) {
+  return new Error(ACCESS_DENIED_MESSAGE, cause === undefined ? undefined : { cause });
+}
+
 function authorize(canonicalRoots, target) {
   if (!isAuthorized(canonicalRoots, target)) {
-    throw new Error("Access denied: image path is outside allowed roots.");
+    throw accessDeniedError();
   }
   return target;
 }
@@ -208,7 +218,12 @@ export async function resolveAuthorizedImagePath(
       return authorize(canonicalRoots, target);
     }
   } catch (error) {
-    if (!isMissingPathError(error) || !isFilenameOnly(filePath)) {
+    // Only a bare filename earns the recursive fallback; every other failure
+    // to resolve a caller-supplied path reports the same way.
+    if (!isFilenameOnly(filePath)) {
+      throw accessDeniedError(error);
+    }
+    if (!isMissingPathError(error)) {
       throw error;
     }
   }

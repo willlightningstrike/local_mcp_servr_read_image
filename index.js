@@ -50,15 +50,20 @@ const TOOLS = [
   {
     name: "read_local_image",
     description: "Reads a local image file and provides it to the AI for visual analysis.",
+    // Must stay in step with ReadLocalImageArgsSchema: a request this schema
+    // accepts has to be one the runtime accepts too.
     inputSchema: {
       type: "object",
       properties: {
         filePath: {
           type: "string",
-          description: "An absolute path, a working-directory-relative path, or a filename to search for recursively within authorized roots (jpg, png, webp)."
+          minLength: 1,
+          pattern: "\\S",
+          description: "An absolute path, a working-directory-relative path, or a filename to search for recursively within authorized roots (jpg, png, webp). Surrounding whitespace is trimmed."
         }
       },
-      required: ["filePath"]
+      required: ["filePath"],
+      additionalProperties: false
     }
   }
 ];
@@ -70,7 +75,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   agentLog.error(`[Agent] Executing: ${name}`);
 
   switch (name) {
-    case "read_local_image":
+    case "read_local_image": {
       const parsedArgs = ReadLocalImageArgsSchema.safeParse(args);
       if (!parsedArgs.success) {
         throw new McpError(
@@ -132,9 +137,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isError: true
         };
       }
+    }
 
     default:
-      throw new Error("Tool not found");
+      // An unknown tool name is a caller fault, not a server failure; a plain
+      // Error would surface as InternalError (-32603).
+      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
   }
 });
 

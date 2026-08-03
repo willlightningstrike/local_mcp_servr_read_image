@@ -156,6 +156,21 @@ reads.
 Relative entries in `MCP_IMAGE_ALLOWED_ROOTS` are resolved from the server's
 working directory. Absolute entries are easier to audit and are recommended.
 
+### Image size limit
+
+Reads are capped at 16 MiB. Encoding an image to Base64 and serializing it into
+an MCP response holds several copies in memory at once, so an unbounded read can
+stall or terminate the server. Files above the cap are refused before any data
+is read.
+
+```bash
+# Raise the cap to 32 MiB
+MCP_IMAGE_MAX_BYTES=33554432 node index.js
+```
+
+`MCP_IMAGE_MAX_BYTES` must be a positive integer number of bytes. An invalid
+value stops the server at startup rather than falling back to the default.
+
 ## MCP client configuration
 
 Replace every `/ABSOLUTE/PATH/...` value below. Paths to Node, `index.js`, and
@@ -373,13 +388,30 @@ Read these before enabling the server:
 That is normal when you run `node index.js` directly. The server is waiting for
 MCP messages on standard input.
 
-### `Access denied: image path is outside allowed roots`
+### `Access denied: image path is missing or outside allowed roots`
+
+This one message covers both a path that does not exist and a path that exists
+outside every authorized root. The two are deliberately indistinguishable so
+the tool cannot be used to test for the existence of files it may not read. The
+server log records the underlying cause.
 
 - Confirm the server's actual working directory.
+- Confirm the path exists and is spelled correctly, including letter case.
 - Put the file under that directory, set a narrow `cwd`, or add an explicit
   root through `MCP_IMAGE_ALLOWED_ROOTS`.
 - Use `:` between additional roots on macOS/Linux and `;` on Windows.
 - Check whether the requested path is a symlink that resolves elsewhere.
+
+### `Access denied: image path became a symlink after authorization`
+
+The authorized file was replaced with a symlink between the authorization check
+and the read. The read is refused rather than following the new target. Retry;
+if it repeats, something is actively rewriting entries in an authorized root.
+
+### `Image is N bytes, above the M byte limit`
+
+The file is larger than the configured cap. Resize the image or raise
+`MCP_IMAGE_MAX_BYTES`.
 
 ### `Image file not found in authorized roots`
 
