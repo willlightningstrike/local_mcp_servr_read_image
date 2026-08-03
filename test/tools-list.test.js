@@ -91,6 +91,35 @@ test("read_local_image rejects malformed arguments as InvalidParams", async () =
   }
 });
 
+test("read_local_image refuses an image above the configured size limit", async () => {
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-image-size-"));
+  const serverEntry = path.join(process.cwd(), "index.js");
+  await fs.writeFile(path.join(base, "large.png"), "x".repeat(64));
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverEntry],
+    cwd: base,
+    env: { ...process.env, MCP_IMAGE_MAX_BYTES: "16" },
+  });
+  const client = new Client({ name: "image-size-test", version: "1.0.0" });
+
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "read_local_image",
+      arguments: { filePath: "large.png" },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /64 bytes, above the 16 byte limit/);
+    assert.equal(result.content.some(({ type }) => type === "image"), false);
+  } finally {
+    await client.close();
+    await fs.rm(base, { recursive: true, force: true });
+  }
+});
+
 test("read_local_image finds a nested image by filename", async () => {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-image-search-"));
   const nested = path.join(base, "nested");

@@ -12,7 +12,27 @@ import { z } from "zod";
 import { resolveAuthorizedImagePath } from "./image-access.js";
 import { agentLog } from "./logger.js";
 
+const DEFAULT_MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+
+// Base64 encoding plus JSON serialization holds several copies of the image in
+// memory at once, so an unbounded read can stall or kill the server.
+function configuredMaxImageBytes(rawValue = process.env.MCP_IMAGE_MAX_BYTES) {
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return DEFAULT_MAX_IMAGE_BYTES;
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new TypeError("MCP_IMAGE_MAX_BYTES must be a positive integer.");
+  }
+  return parsed;
+}
+
+const MAX_IMAGE_BYTES = configuredMaxImageBytes();
+
 const ReadLocalImageArgsSchema = z.object({
+  // trim() is deliberate: model-supplied paths routinely carry stray
+  // whitespace. Filenames whose own leading/trailing spaces are significant
+  // are not addressable through this tool.
   filePath: z.string().trim().min(1),
 }).strict();
 
@@ -65,6 +85,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Check if file exists and is an image
         const stats = await fs.stat(absolutePath);
         if (!stats.isFile()) throw new Error("Path is not a file.");
+
+        if (stats.size > MAX_IMAGE_BYTES) {
+          throw new Error(
+            `Image is ${stats.size.toLocaleString("en-US")} bytes, above the ${MAX_IMAGE_BYTES.toLocaleString("en-US")} byte limit. Resize the image or raise MCP_IMAGE_MAX_BYTES.`,
+          );
+        }
 
         const ext = path.extname(absolutePath).toLowerCase();
         const validExts = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
